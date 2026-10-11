@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — Movies boilerplate</title>
+<style>
+  :root { --ink: #1c1917; --muted: #57534e; --line: #e7e5e4; --bg: #fff; --code: #f5f5f4; --accent: #1d4ed8; }
+  body { margin: 0; font: 17px/1.6 "Iowan Old Style", Palatino, Georgia, serif; color: var(--ink); background: var(--bg); }
+  main { max-width: 46rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+  h1, h2, h3 { font-family: "Segoe UI", system-ui, sans-serif; line-height: 1.25; }
+  h1 { font-size: 2rem; margin-bottom: 0.25rem; }
+  h2 { margin-top: 2.5rem; font-size: 1.35rem; }
+  h3 { margin-top: 1.5rem; font-size: 1.05rem; }
+  p, li { color: var(--ink); }
+  .lede { color: var(--muted); font-size: 1.05rem; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; }
+  code { background: var(--code); padding: 0.1em 0.35em; border-radius: 4px; }
+  pre { background: #1c1917; color: #fafaf9; padding: 1rem; overflow: auto; border-radius: 8px; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  a { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+  th, td { border: 1px solid var(--line); text-align: left; padding: 0.45rem 0.55rem; vertical-align: top; }
+  th { background: #fafaf9; }
+  .arrow { font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--code); padding: 0.75rem 1rem; border-radius: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>How this starter is built</h1>
+  <p class="lede">A short tour of domain-driven design, Clean Architecture, and dependency injection, using the movies app as the example. For commands, start with <a href="README.md">README.md</a>. For agent rules, start with <a href="CLAUDE.md">CLAUDE.md</a>.</p>
+
+  <h2>1. What this app is</h2>
+  <p>The browser renders the screens. Next.js handles three server jobs: the Auth.js session, a proxy that sends guests to the sign-in page, and <code>/api/tmdb</code>, which attaches a server-only token and forwards movie requests. Lists and detail pages do not fetch in the server component. They call a repository through a React hook.</p>
+
+  <h2>2. Three ideas, one feature</h2>
+  <p><strong>Domain-driven design</strong> names the things the feature talks about (<code>TMovie</code>, <code>IMoviesRepository</code>) before it names frameworks. <strong>Clean Architecture</strong> says those names must not import React or HTTP. <strong>Dependency injection</strong> is how a React hook gets a repository without constructing <code>fetch</code> itself. A feature is easier to copy when those three stay separate.</p>
+
+  <h2>3. Domain-driven design</h2>
+  <p>A feature is a bounded context. Movies does not know how auth stores a session, and auth does not know a poster path. Inside movies, the ubiquitous language is small: a list item, a list page, a detail, a genre. Those are types in <code>domain/movie.types.ts</code>. The port <code>IMoviesRepository</code> is the only way the rest of the feature asks for them. The domain does not mention URLs.</p>
+
+  <h2>4. The dependency rule</h2>
+  <p class="arrow">app → presentation → application → domain ← data</p>
+  <p>Source code dependencies point inward, toward <code>domain</code>. <code>data</code> may import the domain (it implements the port). The domain may not import <code>data</code>, React, Next, TanStack Query, or <code>openapi-fetch</code>. <code>application</code> may import the port and must not import the adapter. That is why a query hook calls <code>repo.getMovie(id)</code> and never a path string.</p>
+  <p>Request paths live in <code>data/movie.api-repository.ts</code> only. Changing a path is a one-file edit plus a mapper test.</p>
+
+  <h2>5. Dependency injection</h2>
+  <p>The port is an interface. The adapter is <code>MoviesApiRepository</code>, marked <code>@injectable()</code>, with the API client injected by a Symbol token. <code>registerMovies()</code> binds the token to the class. <code>useResolve(MOVIES_REPOSITORY)</code> is the React-side lookup. The composition root is <code>src/app/providers.tsx</code>, which runs once on the client: core logger, toast, auth, movies, then the API client.</p>
+  <p>Constructor injection needs <code>reflect-metadata</code> and the two TypeScript decorator flags in <code>tsconfig.json</code>. <code>src/core/di/di.test.ts</code> fails if that metadata disappears.</p>
+
+  <h2>6. What each layer does here</h2>
+  <table>
+    <thead><tr><th>Layer</th><th>Movies example</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td>domain</td><td><code>IMoviesRepository</code>, <code>TMovieDetails</code></td><td>No framework imports</td></tr>
+      <tr><td>data</td><td><code>MoviesApiRepository</code>, mappers, image URL helper</td><td>Only place paths live</td></tr>
+      <tr><td>application</td><td><code>useNowPlaying</code>, <code>useTrending</code>, <code>useMovie</code></td><td>Reads call the port. No import from <code>data/</code></td></tr>
+      <tr><td>presentation</td><td>Screens and view formatting</td><td>Renders view models</td></tr>
+      <tr><td>di</td><td><code>MOVIES_REPOSITORY</code></td><td>Bound in <code>registerMovies()</code></td></tr>
+    </tbody>
+  </table>
+  <p>Reads skip use-cases. A use-case is for a mutation that should return a neverthrow <code>Result</code> instead of throwing. The base class is in <code>src/core/domain/base/use-case.ts</code>. This starter has no client mutation yet. Sign-in is not a client use-case: Auth.js checks the password on the server.</p>
+  <p>Repositories throw. <code>ApiError</code> is how a non-OK HTTP status surfaces. A 200 with <code>results: []</code> is an empty list, not an error.</p>
+
+  <h2>7. Where the files are</h2>
+  <ul>
+    <li><code>src/core/movies</code> — the sample feature</li>
+    <li><code>src/auth</code> — credentials, kept beside <code>core</code> because the proxy must import the Auth.js instance without the React barrel</li>
+    <li><code>src/core/ui</code> — presentational only. It cannot import a feature's domain, data, or application</li>
+    <li><code>src/app</code> — route files that render a screen and return. They do not call the movie API</li>
+  </ul>
+
+  <h2>8. Boot sequence</h2>
+  <ol>
+    <li>Root layout injects public env and wraps the tree in <code>Providers</code>.</li>
+    <li><code>Providers</code> registers DI, then theme, session, and the query client.</li>
+    <li><code>src/proxy.ts</code> redirects guests to <code>/signin</code> and signed-in users away from that page.</li>
+    <li>A screen calls a read hook. The hook resolves the repository. The repository calls <code>openapi-fetch</code>.</li>
+  </ol>
+
+  <h2>9. Auth</h2>
+  <p><code>authenticate()</code> accepts username <code>admin</code> and password <code>admin</code> and returns a <code>Result</code>. The Credentials <code>authorize</code> callback turns an error into <code>null</code>, which Auth.js reports as a failed sign-in. The form shows "Invalid username or password." The proxy has no roles and no extra unauthorized page.</p>
+
+  <h2>10. API boundary</h2>
+  <p>The browser client base URL is <code>/api/tmdb</code>. Generated path keys already include <code>/3</code>, so the base URL must not. The route handler allows GET and HEAD, adds <code>Authorization: Bearer</code> from <code>TMDB_READ_ACCESS_TOKEN</code>, and forwards to the upstream host. There is no success/data envelope to unwrap.</p>
+  <pre><code>page → screen → useQuery → IMoviesRepository → openapi-fetch → /api/tmdb → upstream</code></pre>
+  <h3>Two kinds of types</h3>
+  <p><code>bun run codegen</code> runs <code>openapi-typescript</code> against the official movie OpenAPI document and rewrites the whole of <code>src/core/api-client/generated/schema.ts</code>. That file is the shared contract for every path the client can call. It is committed, and it is machine-generated: change the spec source, run codegen again, and commit the result. Do not add a type to that file by hand.</p>
+  <p>A feature's view models are a second set of types, written in <code>domain/</code> (<code>TMovieListItem</code>, <code>TMovieDetails</code>). The mapper in <code>data/</code> turns a generated response into those view models. Codegen does not create them, and a new screen does not append them to <code>schema.ts</code>.</p>
+  <p>Run codegen when the upstream document has an operation or a field the committed schema does not yet describe. If the path is already a key in <code>schema.ts</code> — <code>/3/movie/now_playing</code>, <code>/3/movie/{movie_id}</code>, and the rest of the published spec — the adapter imports <code>paths</code> and calls it. No codegen step.</p>
+
+  <h2>11. Walkthrough: open a movie</h2>
+  <ol>
+    <li><code>src/app/(app)/movies/[movieId]/page.tsx</code> awaits <code>params</code> and renders <code>MovieDetailScreen</code>.</li>
+    <li>The screen calls <code>useMovie(id)</code>.</li>
+    <li>The hook resolves <code>MOVIES_REPOSITORY</code> and runs <code>getMovie</code>.</li>
+    <li>The adapter calls <code>GET /3/movie/{movie_id}</code>, and the mapper returns <code>TMovieDetails</code>.</li>
+    <li>The screen passes poster paths through <code>tmdbImageUrl</code> and renders <code>MovieHero</code> and <code>MovieMeta</code>.</li>
+  </ol>
+
+  <h2>12. Design system</h2>
+  <p><code>src/core/ui/primitives</code> is stock shadcn. Authored pieces (<code>MovieCard</code>, <code>AppShell</code>, and the rest) each have a folder, an <code>index.ts</code>, a <code>.md</code>, a test, and a story. Screens have tests and a <code>.agents.md</code> file, not stories. The shell is a header, not a sidebar.</p>
+
+  <h2>13. What is enforced</h2>
+  <ul>
+    <li>ESLint blocks deep imports such as <code>@/core/movies/domain/…</code> and path segments like <code>v1</code> or <code>old</code>.</li>
+    <li><code>src/proxy.ts</code> and <code>src/app/api/auth</code> may import <code>@/auth/data/auth</code> so the client barrel stays out of the proxy.</li>
+    <li><code>bun run depcruise</code> checks the layer arrows.</li>
+    <li>Outside a feature, import <code>@/core/movies</code> or <code>@/auth</code> only.</li>
+  </ul>
+
+  <h2>14. How to add a feature</h2>
+  <ol>
+    <li>Create <code>src/core/&lt;feature&gt;/</code> with <code>domain</code>, <code>data</code>, <code>application</code>, <code>presentation</code>, and <code>di</code>.</li>
+    <li>Write the port and view models first. No framework imports.</li>
+    <li>If the upstream OpenAPI document has operations the committed <code>schema.ts</code> does not list yet, run <code>bun run codegen</code> and commit the regenerated file. A path that is already in that file needs no codegen run. Write the feature's own view models in <code>domain/</code> either way.</li>
+    <li>Implement the adapter and mapper. The adapter calls a path from <code>paths</code>. The mapper returns the domain view model. Put the path in the adapter only.</li>
+    <li>Add a read hook and a query key. Export the public surface from <code>index.ts</code>.</li>
+    <li>Call <code>register&lt;Feature&gt;()</code> from <code>providers.tsx</code>.</li>
+    <li>Add a thin <code>page.tsx</code> that renders the screen.</li>
+    <li>Add <code>&lt;feature&gt;.md</code>, a <code>.md</code> and story and test per UI component, and a <code>.agents.md</code> per screen.</li>
+    <li>Extend the ESLint façade pattern and the dependency-cruiser UI rule so the new feature cannot be deep-imported and <code>core/ui</code> cannot import its business layers.</li>
+  </ol>
+</main>
+</body>
+</html>

@@ -1,0 +1,1 @@
+export const MOVIES_REPOSITORY = Symbol("MOVIES_REPOSITORY");

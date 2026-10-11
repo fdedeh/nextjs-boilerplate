@@ -1,0 +1,1 @@
+export { TrendingScreen } from "./TrendingScreen";
